@@ -1,15 +1,15 @@
 import logging
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters, CallbackQueryHandler
-from config import BOT_TOKEN
-from db import init_db, register_user
-from handlers.client import (
+from tender_bot.config import BOT_TOKEN
+from tender_bot.db import init_database, db
+from tender_bot.handlers.client import (
     start_application, ask_company, ask_contact, ask_description, ask_docs, ask_images, ask_comments, confirm,
     ASK_COMPANY, ASK_CONTACT, ASK_DESCRIPTION, ASK_DOCS, ASK_IMAGES, ASK_COMMENTS, CONFIRM
 )
-from handlers.admin import list_applications, application_detail, assign_executor
-from handlers.executor import list_deals, change_status, set_status
-from filters import is_contact_info, log_message
+from tender_bot.handlers.admin import list_applications, application_detail, assign_executor
+from tender_bot.handlers.executor import list_deals, change_status, set_status
+from tender_bot.filters import is_contact_info, log_message
 
 logging.basicConfig(level=logging.INFO)
 
@@ -33,7 +33,16 @@ async def choose_role(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not role:
         await update.message.reply_text("Пожалуйста, выберите роль с помощью кнопок.")
         return CHOOSE_ROLE
-    register_user(user.id, user.username, role)
+    
+    db.execute(
+        """
+        INSERT INTO users (telegram_id, username, role)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (telegram_id) DO NOTHING;
+        """,
+        (user.id, user.username, role)
+    )
+    
     await update.message.reply_text(f"Вы зарегистрированы как {role_text}.")
     return ConversationHandler.END
 
@@ -47,13 +56,14 @@ async def group_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if message.text and is_contact_info(message.text):
         await message.delete()
         await message.reply_text('Контактные данные запрещены! Сообщение удалено.')
-        log_message(deal_id, user.id, message.text, is_deleted=True, reason='contact_info')
+        log_message(db, deal_id, user.id, message.text, is_deleted=True, reason='contact_info')
     else:
-        log_message(deal_id, user.id, message.text or '', is_deleted=False)
+        log_message(db, deal_id, user.id, message.text or '', is_deleted=False)
 
 def main():
-    init_db()
+    init_database()
     app = Application.builder().token(BOT_TOKEN).build()
+    
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={

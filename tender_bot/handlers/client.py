@@ -1,6 +1,6 @@
 from telegram import Update, ReplyKeyboardRemove, Document, PhotoSize
 from telegram.ext import ConversationHandler, CommandHandler, MessageHandler, filters, ContextTypes
-from db import get_connection
+from tender_bot.db import db
 import os
 
 ASK_COMPANY, ASK_CONTACT, ASK_DESCRIPTION, ASK_DOCS, ASK_IMAGES, ASK_COMMENTS, CONFIRM = range(7)
@@ -89,27 +89,31 @@ async def save_file(update, context, file_id, file_name, is_photo=False):
 def save_application(update, context):
     user = update.effective_user
     data = context.user_data
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
+    
+    # Получаем ID пользователя из нашей БД
+    user_db_id = db.execute("SELECT id FROM users WHERE telegram_id = %s", (user.id,), fetch='one')
+    if not user_db_id:
+        # Этого не должно случиться, если пользователь зарегистрирован
+        print(f"ОШИБКА: Пользователь с telegram_id {user.id} не найден в базе.")
+        return
+
+    app_id = db.execute(
         """
         INSERT INTO applications (client_id, company_name, contact_name, description, status)
-        VALUES ((SELECT id FROM users WHERE telegram_id=%s), %s, %s, %s, 'new') RETURNING id;
+        VALUES (%s, %s, %s, %s, 'new') RETURNING id;
         """,
-        (user.id, data['company_name'], data['contact_name'], data['description'])
-    )
-    app_id = cur.fetchone()[0]
+        (user_db_id[0], data['company_name'], data['contact_name'], data['description']),
+        fetch='one'
+    )[0]
+
     # Сохраняем файлы
     for doc_path in data.get('docs', []):
-        cur.execute(
+        db.execute(
             "INSERT INTO files (application_id, file_type, file_path) VALUES (%s, %s, %s);",
             (app_id, 'doc', doc_path)
         )
     for img_path in data.get('images', []):
-        cur.execute(
+        db.execute(
             "INSERT INTO files (application_id, file_type, file_path) VALUES (%s, %s, %s);",
             (app_id, 'img', img_path)
         )
-    conn.commit()
-    cur.close()
-    conn.close()

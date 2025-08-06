@@ -1,5 +1,4 @@
 import re
-from db import get_connection
 
 def is_contact_info(text):
     # Поиск телефонов, email, ссылок на мессенджеры
@@ -13,13 +12,8 @@ def is_contact_info(text):
             return True
     return False
 
-def log_message(deal_id, sender_id, message, is_deleted=False, reason=None):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
+def log_message(db, deal_id, sender_id, message, is_deleted=False, reason=None):
+    db.execute(
         "INSERT INTO messages_log (deal_id, sender_id, message, is_deleted, reason) VALUES (%s, %s, %s, %s, %s)",
         (deal_id, sender_id, message, is_deleted, reason)
     )
-    conn.commit()
-    cur.close()
-    conn.close()
